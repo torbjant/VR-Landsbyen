@@ -4,22 +4,21 @@ import sys
 
 DEVICE_ADDRESS_BASE_HUB = sys.argv[1]
 DEVICE_ADDRESS_CRANE_HUB = sys.argv[2]
-CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+UUID = "c5f50002-8280-46da-89f4-6d8051e4aeef"
 
 async def main():
-    async with BleakClient(DEVICE_ADDRESS_BASE_HUB) as base_hub, \
-               BleakClient(DEVICE_ADDRESS_CRANE_HUB) as crane_hub:
-
+    async with BleakClient(DEVICE_ADDRESS_BASE_HUB) as base, BleakClient(DEVICE_ADDRESS_CRANE_HUB) as crane:
         while True:
-            line = sys.stdin.readline().strip()
+            line = sys.stdin.readline()
             if not line:
                 break
-
-            parts = line.split(",")
-            data_base = bytes(map(int, parts[:3]))
-            data_crane = bytes(map(int, parts[3:]))
-
-            await base_hub.write_gatt_char(CHAR_UUID, data_base)
-            await crane_hub.write_gatt_char(CHAR_UUID, data_crane)
+            # Expect line like: 255,128,64,200,100,50
+            parts = list(map(int, line.strip().split(",")))
+            base_data = bytes(parts[:3])
+            crane_data = bytes(parts[3:])
+            await asyncio.gather(
+                base.write_gatt_char(UUID, b"\x06" + base_data, response=True),
+                crane.write_gatt_char(UUID, b"\x06" + crane_data, response=True)
+            )
 
 asyncio.run(main())

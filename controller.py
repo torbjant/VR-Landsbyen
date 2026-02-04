@@ -1,55 +1,35 @@
-import subprocess
-import pygame
-import sys
+import asyncio
+from bleak import BleakScanner, BleakClient
 
-DEVICE_ADDRESS_BASE_HUB = "XX:XX:XX:XX:XX:XX"
-DEVICE_ADDRESS_CRANE_HUB = "XX:XX:XX:XX:XX:XX"
+# --- Hub names ---
+HUB_NAME_BASE = "Base_hub"   # Change to the actual name of your base hub
+HUB_NAME_CRANE = "Crane_hub" # Change to the actual name of your crane hub
 
-pygame.init()
-pygame.joystick.init()
-screen = pygame.display.set_mode((200, 200))
+UUID = "c5f50002-8280-46da-89f4-6d8051e4aeef"
 
-js = pygame.joystick.Joystick(0)
-js.init()
+async def main():
+    # Scan for hubs by name
+    base_device = await BleakScanner.find_device_by_name(HUB_NAME_BASE)
+    if not base_device:
+        print(f"Base hub '{HUB_NAME_BASE}' not found!")
+        return
 
-proc = subprocess.Popen(
-    [sys.executable, "ble_sender.py", DEVICE_ADDRESS_BASE_HUB, DEVICE_ADDRESS_CRANE_HUB],
-    stdin=subprocess.PIPE,
-    text=True
-)
+    crane_device = await BleakScanner.find_device_by_name(HUB_NAME_CRANE)
+    if not crane_device:
+        print(f"Crane hub '{HUB_NAME_CRANE}' not found!")
+        return
 
-clock = pygame.time.Clock()
+    # Connect to both hubs
+    async with BleakClient(base_device) as base, BleakClient(crane_device) as crane:
+        print("Connected to both hubs!")
 
-while True:
-    pygame.event.pump()
+        # Example commands
+        await base.write_gatt_char(UUID, b'\x01', response=True)   # Base forward
+        await crane.write_gatt_char(UUID, b'\x02', response=True)  # Crane reverse
 
-    y_left = js.get_axis(0)
-    x_left = js.get_axis(1)
-    y_right = js.get_axis(2)
-    x_right = js.get_axis(3)
+        await asyncio.sleep(2)
 
-    if js.get_button(4):
-        data_base = [
-            int((x_right + 1) * 127),
-            int((y_right + 1) * 127),
-            int((y_left + 1) * 127),
-        ]
-        data_crane = [127, 127, js.get_button(1), js.get_button(0)]
-    else:
-        data_base = [
-            int((y_right + 1) * 127),
-            127,
-            127
-        ]
-        data_crane = [
-            int((y_right + 1) * 127),
-            int((y_left + 1) * 127),
-            js.get_button(1),
-            js.get_button(0)
-        ]
+        await base.write_gatt_char(UUID, b'\x00', response=True)   # Stop base
+        await crane.write_gatt_char(UUID, b'\x00', response=True)  # Stop crane
 
-    line = ",".join(map(str, data_base + data_crane)) + "\n"
-    proc.stdin.write(line)
-    proc.stdin.flush()
-
-    clock.tick(50)
+asyncio.run(main())
