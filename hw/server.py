@@ -1,18 +1,44 @@
-# import cv2
 import asyncio
-from functools import partial
-from websockets.asyncio.server import serve, ServerConnection
+import numpy as np
+import cv2
+import websockets
 
 
-async def send(websocket, data):
-    await ServerConnection.send(websocket, message=data, text=True)
+def decode_payload(message: bytes):
+    # message format: b"A|<jpeg bytes>"
+    sep = message.find(b"|")
+    if sep == -1:
+        return None, None
+    cam_id = message[:sep].decode("ascii", errors="ignore")
+    jpg = message[sep + 1 :]
+    arr = np.frombuffer(jpg, dtype=np.uint8)
+    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    return cam_id, frame
+
+
+async def handler(ws):
+    async for message in ws:
+        if not isinstance(message, (bytes)):
+            continue
+
+        cam_id, frame = decode_payload(message)
+        if frame is None:
+            continue
+
+        cv2.imshow(f"Camera {cam_id}", frame)
+        # quit program
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
 
 
 async def main():
-    server_handler = partial(send, data="bruh")
-    async with serve(server_handler, "localhost", 8765) as server:
-        await server.serve_forever()
+    async with websockets.serve(handler, "0.0.0.0", 8765, max_size=None):
+        print(f"Starting server on ???")
+        await asyncio.Future()  # run forever
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    finally:
+        cv2.destroyAllWindows()
