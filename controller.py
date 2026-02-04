@@ -24,12 +24,12 @@ async def main():
         print("Connected to both hubs!")
 
         # Example commands
-        await base.write_gatt_char(UUID, b'\x01', response=True)   # Base forward
-        await crane.write_gatt_char(UUID, b'\x02', response=True)  # Crane reverse
+        await base.write_gatt_char(UUID, b'\x01' + b'\x01' + b'\x00', response=True)   # Base forward
+        #await crane.write_gatt_char(UUID, b'\x02', response=True)  # Crane reverse
 
         await asyncio.sleep(2)
 
-        await base.write_gatt_char(UUID, b'\x00', response=True)   # Stop base
-        await crane.write_gatt_char(UUID, b'\x00', response=True)  # Stop crane
+        await base.write_gatt_char(UUID, b'\x02' + b'\x02' + b'\x00', response=True)   # Stop base
+        #await crane.write_gatt_char(UUID, b'\x00', response=True)  # Stop crane
 
 asyncio.run(main())

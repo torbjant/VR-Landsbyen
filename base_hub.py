@@ -29,17 +29,17 @@ while True:
     # Each byte controls a motor: 0 = stop, 1 = forward, 2 = backward
     # Left motor
     if cmd[0] == 0x01:
-        left_motor.dc(50)
+        left_motor.run_angle(50, 360)
     elif cmd[0] == 0x02:
-        left_motor.dc(-50)
+        left_motor.dc(50, -360 )
     else:
         left_motor.stop()
 
     # Right motor
     if cmd[1] == 0x01:
-        right_motor.dc(50)
+        right_motor.dc(50, 360)
     elif cmd[1] == 0x02:
-        right_motor.dc(-50)
+        right_motor.dc(50, -360)
     else:
         right_motor.stop()
 
