@@ -1,5 +1,5 @@
 from pybricks.pupdevices import Motor
-from pybricks.parameters import Port
+from pybricks.parameters import Direction, Port
 from pybricks.tools import wait
 from pybricks.parameters import Color
 from pybricks.hubs import TechnicHub
@@ -18,9 +18,9 @@ hub = TechnicHub()
 # brightness = 100
 
 # ---- Initialize Motors ----
-boom_motor = Motor(Port.A)
+boom_motor = Motor(Port.A, positive_direction=Direction.COUNTERCLOCKWISE)
 jib_motor = Motor(Port.D)
-hoist_motor = Motor(Port.B)
+hoist_motor = Motor(Port.B, positive_direction=Direction.COUNTERCLOCKWISE)
 
 def convert_byte_to_duty_cycle(byte):
     return ((byte / 127) - 1) * 100

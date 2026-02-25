@@ -18,9 +18,9 @@ hub = TechnicHub()
 # brightness = 100
 
 # ---- Initialize Motors ----
-left_motor = Motor(Port.C, positive_direction=Direction.CLOCKWISE)
+left_motor = Motor(Port.C, positive_direction=Direction.COUNTERCLOCKWISE)
 right_motor = Motor(Port.D)
-rotation_motor = Motor(Port.B)
+rotation_motor = Motor(Port.B, positive_direction=Direction.COUNTERCLOCKWISE)
 
 def convert_byte_to_duty_cycle(byte):
     return ((byte / 127) - 1) * 100
