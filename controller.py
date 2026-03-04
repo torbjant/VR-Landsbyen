@@ -13,9 +13,15 @@ PYBRICKS_COMMAND_EVENT_CHAR_UUID = "c5f50002-8280-46da-89f4-6d8051e4aeef"
 BASE_HUB = "Base_hub"
 CRANE_HUB = "Crane_hub"
 
+def apply_deadband(value, threshold=0.05):
+    if abs(value) < threshold:
+        return 0
+    return value
 
 def get_input_state(joysticks):
-    pygame.event.pump()
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            return {"type": "quit"}
 
     if not joysticks:
         keys = pygame.key.get_pressed()
@@ -105,27 +111,54 @@ def map_controls(state):
             crane[2] = -100
 
     else:
+
         # Joystick mode
-        hat = state["hat_right"]
-        toggle = state["button_2_right"]
+        hat_right = state["hat_right"]
+        hat_left = state["hat_left"]
+        rotate = map_value(state["rotation_left"])
 
-        rotate = map_value(state["x_right"])
-
-        if toggle:
-            left = right = map_value(state["y_right"])
+        if state["rotation_right"] > 0.1 or state["rotation_right"] < -0.1:
+            left = -state["rotation_right"]
+            right = state["rotation_right"]
 
         else:
-            boom = map_value(state["y_right"])
-            jib = map_value(state["y_left"])
+            y = state["y_right"]  # forward/back
+            x = state["x_right"]  # turn
 
-            if hat == (0, 1):
-                hoist = 200
-            elif hat == (0, -1):
-                hoist = 50
-            else:
-                hoist = 127
+            if abs(y) < 0.05:
+                y = 0
+            if abs(x) < 0.05:
+                x = 0
 
+            left = y - x
+            right = y + x
 
+        left = max(-1, min(1, left))
+        right = max(-1, min(1, right))
+
+        left = map_value(left)
+        right = map_value(right)
+        boom = map_value(state["y_left"])
+
+        jib = state["hat_left"]
+
+        if hat_right == (0, 1):
+            hoist = 255
+
+        elif hat_right == (0, -1):
+            hoist = 0
+
+        else:
+            hoist = 127
+
+        if hat_left == (0, -1):
+            jib = 255
+
+        elif hat_left == (0, 1):
+            jib = 0
+
+        else:
+            jib = 127
 
     base[0] = left
     base[1] = right
@@ -170,13 +203,22 @@ class HubController:
                 self.ready_event.set()
 
     async def send(self, data):
-        await self.ready_event.wait()
+        if not self.client or not self.client.is_connected:
+            return
+
+        if not self.ready_event.is_set():
+            return  # skip if not ready
+
         self.ready_event.clear()
-        await self.client.write_gatt_char(
-            PYBRICKS_COMMAND_EVENT_CHAR_UUID,
-            b"\x06" + bytes(data),
-            response=True
-        )
+
+        try:
+            await self.client.write_gatt_char(
+                PYBRICKS_COMMAND_EVENT_CHAR_UUID,
+                b"\x06" + bytes(data),
+                response=False
+            )
+        except Exception as e:
+            print(f"{self.name} write error:", e)
 
     async def disconnect(self):
         await self.client.disconnect()
@@ -208,15 +250,32 @@ async def main():
 
     running = True
 
+    last_base = None
+    last_crane = None
+
     while running:
         state = get_input_state(joysticks)
+        if state["type"] == "quit":
+            running = False
+            break
         base_data, crane_data, running = map_controls(state)
 
-        await base.send(base_data)
-        await crane.send(crane_data)
 
-        await asyncio.sleep(0.02)
+        if base_data != last_base:
+            await base.send(base_data)
+            last_base = base_data.copy()
 
+        if crane_data != last_crane:
+            await crane.send(crane_data)
+            last_crane = crane_data.copy()
+
+        await asyncio.sleep(0.03)  # slower
+
+        if not running:
+            base_data[3] = 0x01
+            await base.send(base_data)
+            crane_data[3] = 0x01
+            await crane.send(crane_data)
 
     pygame.quit()
 
