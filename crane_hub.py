@@ -20,7 +20,7 @@ hub = TechnicHub()
 # ---- Initialize Motors ----
 boom_motor = Motor(Port.A, positive_direction=Direction.COUNTERCLOCKWISE)
 jib_motor = Motor(Port.D)
-hoist_motor = Motor(Port.B, positive_direction=Direction.COUNTERCLOCKWISE)
+hoist_motor = Motor(Port.B)
 
 def convert_byte_to_duty_cycle(byte):
     return ((byte / 127) - 1) * 100
