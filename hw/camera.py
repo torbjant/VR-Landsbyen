@@ -1,104 +1,137 @@
-from picamera2 import Picamera2
-from websockets.asyncio.client import connect
+import os, time, subprocess
 import RPi.GPIO as gp
-import asyncio
-import cv2
-import time
-import os
+from picamera2 import Picamera2
+from picamera2.encoders import H264Encoder
+from picamera2.outputs import FileOutput
 
-width = 320
-height = 240
+DEST_IP = "192.168.12.1"
+DEST_PORT = 5000
+FIFO = "/tmp/cam.h264"
+
 
 adapter_info = {
-    "A": {
-        "i2c_cmd": "i2cset -y 10 0x70 0x00 0x04",
-        "gpio_sta": [0, 0, 1],
-    },
-    "B": {
-        "i2c_cmd": "i2cset -y 10 0x70 0x00 0x05",
-        "gpio_sta": [1, 0, 1],
-    },
-    "C": {
-        "i2c_cmd": "i2cset -y 10 0x70 0x00 0x06",
-        "gpio_sta": [0, 1, 0],
-    },
-    "D": {
-        "i2c_cmd": "i2cset -y 10 0x70 0x00 0x07",
-        "gpio_sta": [1, 1, 0],
-    },
+    "A": {"i2c_cmd": "i2cset -y 1 0x70 0x04", "gpio_sta": [0, 0, 1]},
+    "B": {"i2c_cmd": "i2cset -y 1 0x70 0x08", "gpio_sta": [1, 0, 1]},
+    "C": {"i2c_cmd": "i2cset -y 1 0x70 0x01", "gpio_sta": [0, 1, 0]},
+    "D": {"i2c_cmd": "i2cset -y 1 0x70 0x02", "gpio_sta": [1, 1, 0]},
 }
 
 
-class Camera:
-    camera_ids = ["A", "B", "C", "D"]
+def select_channel(cam_id: str):
+    gpio = adapter_info[cam_id]["gpio_sta"]
+    gp.output(7, gpio[0])
+    gp.output(11, gpio[1])
+    gp.output(12, gpio[2])
+    os.system(adapter_info[cam_id]["i2c_cmd"])
+    time.sleep(0.5)
 
-    def __init__(self, address):
-        global picam2
-        self.ws_addr = address
-        gp.setwarnings(False)
-        gp.setmode(gp.BOARD)
-        gp.setup(7, gp.OUT)
-        gp.setup(11, gp.OUT)
-        gp.setup(12, gp.OUT)
 
-        # Init MUX board
-        for item in self.camera_ids:
-            try:
-                self.select_channel(item)
-                self.init_i2c(item)
-                time.sleep(0.5)
-            except Exception as e:
-                print(f"except on {item}: {str(e)}")
+def send_slice(cam):
+    subprocess.run(
+        [
+            "libcamera-vid",
+            "-t",
+            str(SLICE_MS),
+            "--width",
+            "1280",
+            "--height",
+            "720",
+            "--framerate",
+            "30",
+            "--codec",
+            "h264",
+            "--inline",
+            "--profile",
+            "baseline",
+            "--bitrate",
+            "2000000",
+            "-o",
+            f"udp://{DEST_IP}:{PORT[cam]}",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
-        # Init camera
+
+def main():
+    gp.setwarnings(False)
+    gp.setmode(gp.BOARD)
+    gp.setup(7, gp.OUT)
+    gp.setup(11, gp.OUT)
+    gp.setup(12, gp.OUT)
+
+    # recreate FIFO
+    try:
+        os.unlink(FIFO)
+    except FileNotFoundError:
+        pass
+    os.mkfifo(FIFO)
+
+    picam2 = Picamera2()
+    picam2.configure(picam2.create_video_configuration(main={"size": (1280, 720)}))
+    picam2.start()
+    time.sleep(0.3)
+
+    encoder = H264Encoder(bitrate=2_000_000, repeat=True)  # repeat SPS/PPS
+    f = open(FIFO, "wb")  # IMPORTANT: buffered file object
+    picam2.start_recording(encoder, FileOutput(f))
+
+    try:
+        while True:
+            cam_ids = ["A", "C"]
+            for id in cam_ids:
+                select_channel(id)
+                send_slice(id)
+    finally:
         try:
-            picam2 = Picamera2()
-            picam2.configure(
-                picam2.create_still_configuration(
-                    main={"size": (320, 240), "format": "BGR888"}, buffer_count=2
-                )
-            )
-            picam2.start()
-            time.sleep(2)
-            picam2.capture_array(wait=False)
-            time.sleep(0.1)
-        except Exception as e:
-            print(f"except: {str(e)}")
+            picam2.stop_recording()
+        except Exception:
+            pass
+        try:
+            picam2.stop()
+        except Exception:
+            pass
+        try:
+            f.close()
+        except Exception:
+            pass
+        ff.terminate()
+        ff.wait(timeout=2)
 
-    def select_channel(self, index):
-        channel_info = adapter_info.get(index)
-        if channel_info == None:
-            print("Can't get this info")
-        gpio_sta = channel_info["gpio_sta"]  # gpio write
-        gp.output(7, gpio_sta[0])
-        gp.output(11, gpio_sta[1])
-        gp.output(12, gpio_sta[2])
-
-    def init_i2c(self, index):
-        channel_info = adapter_info.get(index)
-        os.system(channel_info["i2c_cmd"])  # i2c write
-
-    async def stream(self):
-        async with connect(self.ws_addr) as ws:
-            print("Connected to websocket")
-
-            while True:
-                for id in self.camera_ids:
-                    self.select_channel(id)
-                    await asyncio.sleep(0.1)
-                    try:
-                        buf = picam2.capture_array()
-                        buf = picam2.capture_array()
-                        ok, img = cv2.imencode(".jpg", buf)
-
-                        if ok:
-                            await ws.send((id + "|").encode("ascii") + img.tobytes())
-
-                    except Exception as e:
-                        print("capture_buffer: " + str(e))
-                        await asyncio.sleep(0.1)
+    # # Start ffmpeg first (it will open FIFO for reading)
+    # ff = subprocess.Popen([
+    #     "ffmpeg",
+    #     "-loglevel", "warning",
+    #     "-fflags", "nobuffer",
+    #     "-flags", "low_delay",
+    #     "-probesize", "2000000",
+    #     "-analyzeduration", "2000000",
+    #     "-f", "h264",
+    #     "-i", FIFO,
+    #     "-c", "copy",
+    #     "-f", "mpegts",
+    #     f"udp://{DEST_IP}:{DEST_PORT}?pkt_size=1316"
+    # ])
 
 
+#     try:
+#         while True:
+#             time.sleep(1)
+#     finally:
+#         try:
+#             picam2.stop_recording()
+#         except Exception:
+#             pass
+#         try:
+#             picam2.stop()
+#         except Exception:
+#             pass
+#         try:
+#             f.close()
+#         except Exception:
+#             pass
+#         ff.terminate()
+#         ff.wait(timeout=2)
+#
 if __name__ == "__main__":
-    camera = Camera("fill-inn-addr")
-    asyncio.run(camera.stream())
+    main()
