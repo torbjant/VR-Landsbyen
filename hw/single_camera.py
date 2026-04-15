@@ -8,7 +8,7 @@ FPS = 50
 
 
 def camera_exists() -> bool:
-    return len(Picamera2.global_camera_info()) == 1
+    return len(Picamera2.global_camera_info()) >= 1
 
 
 def start():
